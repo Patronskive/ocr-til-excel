@@ -84,6 +84,7 @@ details table{font-size:13.5px}details td{white-space:normal}
       <button id="cp">Kopier tabell</button>
     </div>
     <div class="msg" id="msg"></div>
+    <div class="msg" id="info"></div>
     <div class="tbl"><table>
       <thead><tr id="hd"></tr></thead>
       <tbody id="tb"></tbody>
@@ -177,8 +178,9 @@ function render(){
   $('tot').textContent=kr(tot);$('cnt').textContent=a.length;
   $('ctl').textContent=allOk?'OK':'Avvik';$('ctl').className='big '+(allOk?'ok':'bad');
   $('hd').innerHTML=COLS.map(([k,t])=>`<th class="${k==='belop'?'r':''}" data-k="${k}">${t}${sortKey===k?(sortDir>0?' ▲':' ▼'):''}</th>`).join('');
-  const f=filtered();
-  $('tb').innerHTML=f.length?f.map(r=>`<tr>${COLS.map(([k])=>k==='belop'?`<td class="r mono">${kr(r.belop)}</td>`:`<td class="${['til','fra','kid','arkivref'].includes(k)?'mono':''}">${esc(r[k])}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${COLS.length}" class="empty">Ingen treff.</td></tr>`;
+  const f=filtered(),MAX=2000,vis=f.slice(0,MAX);
+  $('info').textContent=f.length>MAX?`Viser de første ${MAX.toLocaleString('nb-NO')} av ${f.length.toLocaleString('nb-NO')} rader. Søk for å snevre inn. Excel og «Kopier tabell» tar med alle ${f.length.toLocaleString('nb-NO')}.`:(f.length!==a.length?`${f.length.toLocaleString('nb-NO')} treff, sum ${kr(f.reduce((s,r)=>s+r.belop,0))}`:'');
+  $('tb').innerHTML=vis.length?vis.map(r=>`<tr>${COLS.map(([k])=>k==='belop'?`<td class="r mono">${kr(r.belop)}</td>`:`<td class="${['til','fra','kid','arkivref'].includes(k)?'mono':''}">${esc(r[k])}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${COLS.length}" class="empty">Ingen treff.</td></tr>`;
 }
 
 async function load(list){
@@ -199,7 +201,7 @@ const dz=$('drop');
 ['dragleave','drop'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();if(ev==='drop'||e.target===document.documentElement)dz.classList.remove('on')}));
 document.addEventListener('drop',e=>{dz.classList.remove('on');if(e.dataTransfer?.files?.length)load([...e.dataTransfer.files])});
 $('clr').addEventListener('click',()=>{files=[];$('q').value='';render()});
-$('q').addEventListener('input',render);
+let qt;$('q').addEventListener('input',()=>{clearTimeout(qt);qt=setTimeout(render,250)});
 $('hd').addEventListener('click',e=>{const k=e.target.closest('th')?.dataset.k;if(!k)return;sortDir=sortKey===k?-sortDir:1;sortKey=k;render()});
 
 function sheetRows(){
