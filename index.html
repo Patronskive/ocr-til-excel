@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OCR-filer til Excel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/*
+VOICE: rolig arbeidsverktøy, presist og nøkternt.
+IDEA: en kontoutskrift / bankkvittering som fylles ut når filene slippes inn.
+PICTURE: selve tabellen over betalinger, med kontrollsummer per fil øverst.
+COLOUR and TYPE: aluminium, svart, oransje peker; Geist + Geist Mono for tall.
+LAYOUT: tittel og slippsone øverst, filkort i rad, så tabellen i full bredde.
+*/
+:root{color-scheme:light dark;--bg:light-dark(#e9eaec,#141517);--card:light-dark(#ffffff,#1d1f22);--ink:light-dark(#111214,#eceef1);--mut:light-dark(#5d6168,#9aa0a8);--line:light-dark(#d4d6da,#2e3135);--acc:#ff4f00;--ok:light-dark(#1d7a46,#4cc38a);--bad:light-dark(#b3261e,#ff6b5e)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Geist,system-ui,sans-serif;overflow-x:clip}
+.band{padding:clamp(24px,4vw,48px) max(4vw,16px);max-width:1340px;margin:0 auto}
+h1{font-size:clamp(30px,4vw,42px);line-height:1.05;margin:0 0 8px;font-weight:600;text-wrap:balance}
+.lead{color:var(--mut);margin:0 0 22px;max-width:68ch}
+.drop{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;border:2px dashed var(--line);border-radius:14px;padding:22px;background:var(--card);transition:border-color .15s,background .15s}
+.drop.on{border-color:var(--acc);background:light-dark(#fff4ee,#2a1d16)}
+.drop p{margin:0;color:var(--mut)}.drop b{color:var(--ink)}
+.btns{display:flex;flex-wrap:wrap;gap:10px}
+button,.pick{font:500 15px Geist,system-ui,sans-serif;min-height:44px;padding:0 18px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;display:inline-flex;align-items:center}
+button.pri,.pick{background:var(--acc);border-color:var(--acc);color:#fff}
+button:disabled{opacity:.45;cursor:default}
+button:focus-visible,.pick:focus-within,input:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+input[type=file]{position:absolute;width:1px;height:1px;opacity:0}
+.files{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin:22px 0}
+.fc{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.fc .n{font-weight:600;overflow-wrap:anywhere}
+.fc .m{color:var(--mut);font-size:14px}
+.fc .s{font:500 20px 'Geist Mono',monospace;margin-top:6px;white-space:nowrap}
+.ok{color:var(--ok)}.bad{color:var(--bad)}
+.sum{display:flex;flex-wrap:wrap;gap:12px 28px;align-items:baseline;margin:6px 0 14px}
+.sum .big{font:500 clamp(26px,3.4vw,38px)/1 'Geist Mono',monospace;white-space:nowrap}
+.sum .lbl{color:var(--mut);font-size:14px}
+.tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
+.tools input{font:16px Geist,system-ui,sans-serif;min-height:44px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);flex:1 1 220px}
+.msg{color:var(--mut);font-size:14px;min-height:1.4em}
+.tbl{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{font-weight:600;color:var(--mut);position:sticky;top:0;background:var(--card);cursor:pointer;user-select:none}
+th.r,td.r{text-align:right}
+td.mono{font-family:'Geist Mono',monospace}
+tbody tr:hover{background:light-dark(#f4f5f6,#24272b)}
+.empty{padding:40px 20px;text-align:center;color:var(--mut)}
+details{margin-top:28px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 18px}
+summary{cursor:pointer;font-weight:600}
+details table{font-size:13.5px}details td{white-space:normal}
+@media(max-width:600px){.drop{flex-direction:column;align-items:stretch}.btns>*{flex:1;justify-content:center}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main class="band">
+  <h1>OCR-filer fra Nets til én tabell</h1>
+  <p class="lead">Slipp inn alle dagens OCR-filer samtidig. Hver innbetaling blir én rad med beløp, KID, konto det er betalt fra og konto det er betalt til. Summene kontrolleres mot sluttrecordene i hver fil. Filene leses bare i nettleseren din og sendes ikke noe sted.</p>
+
+  <div class="drop" id="drop">
+    <p><b>Dra filene hit</b> eller velg dem. Du kan velge flere filer på én gang.</p>
+    <div class="btns">
+      <label class="pick">Velg filer<input type="file" id="inp" multiple accept=".txt,.ocr,.dat,text/plain"></label>
+      <button id="clr">Tøm</button>
+    </div>
+  </div>
+
+  <div class="files" id="files"></div>
+
+  <div id="res" hidden>
+    <div class="sum">
+      <div><div class="lbl">Sum alle filer</div><div class="big" id="tot">0,00</div></div>
+      <div><div class="lbl">Antall betalinger</div><div class="big" id="cnt">0</div></div>
+      <div><div class="lbl">Kontroll mot filenes sluttsum</div><div class="big" id="ctl">–</div></div>
+    </div>
+    <div class="tools">
+      <input id="q" type="search" placeholder="Søk i KID, konto, beløp eller filnavn">
+      <button class="pri" id="xl">Last ned Excel</button>
+      <button id="cp">Kopier tabell</button>
+    </div>
+    <div class="msg" id="msg"></div>
+    <div class="tbl"><table>
+      <thead><tr id="hd"></tr></thead>
+      <tbody id="tb"></tbody>
+    </table></div>
+  </div>
+
+  <div class="tbl empty" id="none">Ingen filer lastet inn ennå.</div>
+
+  <details>
+    <summary>Hvor står feltene i filen?</summary>
+    <table>
+      <thead><tr><th>Record</th><th>Posisjon</th><th>Felt</th></tr></thead>
+      <tbody>
+        <tr><td>20 start oppdrag</td><td>9–17</td><td>Avtale-ID</td></tr>
+        <tr><td>20 start oppdrag</td><td>25–35</td><td>Oppdragskonto (kontoen pengene går inn på)</td></tr>
+        <tr><td>30 beløpspost 1</td><td>5–6</td><td>Transaksjonstype</td></tr>
+        <tr><td>30 beløpspost 1</td><td>9–15</td><td>Transaksjonsnummer (kobler 30 og 31)</td></tr>
+        <tr><td>30 beløpspost 1</td><td>16–21</td><td>Oppgjørsdato DDMMÅÅ</td></tr>
+        <tr><td>30 beløpspost 1</td><td>32 / 33–49</td><td>Fortegn / beløp i øre</td></tr>
+        <tr><td>30 beløpspost 1</td><td>50–74</td><td>KID</td></tr>
+        <tr><td>31 beløpspost 2</td><td>26–34</td><td>Arkivreferanse</td></tr>
+        <tr><td>31 beløpspost 2</td><td>42–47</td><td>Oppdragsdato DDMMÅÅ</td></tr>
+        <tr><td>31 beløpspost 2</td><td>48–58</td><td>Debetkonto (kontoen det er betalt fra)</td></tr>
+        <tr><td>88 slutt oppdrag</td><td>9–16 / 25–41</td><td>Antall transaksjoner / sumbeløp i øre</td></tr>
+      </tbody>
+    </table>
+  </details>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+{
+const TYPES={'10':'Giro belastet konto','11':'Faste oppdrag','12':'Direkte remittering','13':'Bedriftsterminalgiro','14':'Skrankegiro','15':'AvtaleGiro','16':'Telegiro','17':'Giro betalt kontant','18':'Reversering med KID','19':'Kjøp med KID','20':'Reversering med fritekst','21':'Kjøp med fritekst'};
+const COLS=[['fil','Fil'],['oppgjor','Oppgjørsdato'],['til','Betalt til konto'],['fra','Betalt fra konto'],['kid','KID'],['belop','Beløp'],['type','Type'],['oppdragsdato','Oppdragsdato'],['arkivref','Arkivreferanse'],['avtale','Avtale-ID']];
+
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const d6=s=>/^\d{6}$/.test(s)&&s!=='000000'?`${s.slice(0,2)}.${s.slice(2,4)}.20${s.slice(4,6)}`:'';
+const acct=s=>/^\d{11}$/.test(s)&&!/^0+$/.test(s)?`${s.slice(0,4)}.${s.slice(4,6)}.${s.slice(6)}`:'';
+const kr=n=>n.toLocaleString('nb-NO',{minimumFractionDigits:2,maximumFractionDigits:2});
+const iso=s=>{const m=/^(\d\d)\.(\d\d)\.(\d{4})$/.exec(s);return m?`${m[3]}-${m[2]}-${m[1]}`:''};
+
+function parse(text,fil){
+  const rows=[],checks=[];let oppd=null,open={};
+  for(const raw of text.split(/\r?\n/)){
+    const l=raw.replace(/\s+$/,'').padEnd(80,' ');
+    if(!l.startsWith('NY'))continue;
+    const rt=l.slice(6,8);
+    if(rt==='20'){oppd={avtale:l.slice(8,17),til:acct(l.slice(24,35)),sum:0,n:0};open={}}
+    else if(rt==='30'){
+      const nr=l.slice(8,15),sign=l[31]==='-'?-1:1;
+      const r={fil,oppgjor:d6(l.slice(15,21)),til:oppd?.til||'',fra:'',kid:l.slice(49,74).trim(),belop:sign*parseInt(l.slice(32,49),10)/100,type:TYPES[l.slice(4,6)]||('Type '+l.slice(4,6)),oppdragsdato:'',arkivref:'',avtale:oppd?.avtale||''};
+      if(isNaN(r.belop))r.belop=0;
+      rows.push(r);open[nr]=r;if(oppd){oppd.sum+=r.belop;oppd.n++}
+    }
+    else if(rt==='31'){
+      const r=open[l.slice(8,15)];
+      if(r){r.arkivref=l.slice(25,34).replace(/^0+$/,'');r.oppdragsdato=d6(l.slice(41,47));r.fra=acct(l.slice(47,58))}
+    }
+    else if(rt==='88'&&oppd){
+      const n=parseInt(l.slice(8,16),10),s=parseInt(l.slice(24,41),10)/100;
+      checks.push({ok:n===oppd.n&&Math.abs(s-oppd.sum)<0.005,n,s,til:oppd.til});oppd=null;
+    }
+  }
+  return {rows,checks};
+}
+window.__parse=parse;
+
+let files=[],sortKey='oppgjor',sortDir=1;
+const $=id=>document.getElementById(id);
+
+function all(){return files.flatMap(f=>f.rows)}
+function filtered(){
+  const q=$('q').value.trim().toLowerCase();
+  let r=all();
+  if(q)r=r.filter(x=>[x.fil,x.til,x.fra,x.kid,kr(x.belop),String(x.belop),x.type,x.arkivref].join(' ').toLowerCase().includes(q));
+  const k=sortKey,key=x=>k==='oppgjor'||k==='oppdragsdato'?iso(x[k]):x[k];
+  return r.slice().sort((a,b)=>{const A=key(a),B=key(b);return (typeof A==='number'?A-B:String(A).localeCompare(String(B),'nb'))*sortDir});
+}
+
+function render(){
+  $('files').innerHTML=files.map(f=>{
+    const sum=f.rows.reduce((s,r)=>s+r.belop,0);
+    const ok=f.checks.length&&f.checks.every(c=>c.ok);
+    const kontoer=[...new Set(f.checks.map(c=>c.til).filter(Boolean))].join(', ');
+    return `<div class="fc"><div class="n">${esc(f.name)}</div><div class="m">${f.rows.length} betaling${f.rows.length===1?'':'er'}${kontoer?' til '+esc(kontoer):''}</div><div class="s">${kr(sum)}</div><div class="m ${f.err?'bad':ok?'ok':'bad'}">${f.err?esc(f.err):ok?'Stemmer med sluttsum i filen':'Avvik mot sluttsum – sjekk filen'}</div></div>`;
+  }).join('');
+  const has=files.length>0;
+  $('res').hidden=!has;$('none').hidden=has;
+  if(!has)return;
+  const a=all(),tot=a.reduce((s,r)=>s+r.belop,0),allOk=files.every(f=>!f.err&&f.checks.length&&f.checks.every(c=>c.ok));
+  $('tot').textContent=kr(tot);$('cnt').textContent=a.length;
+  $('ctl').textContent=allOk?'OK':'Avvik';$('ctl').className='big '+(allOk?'ok':'bad');
+  $('hd').innerHTML=COLS.map(([k,t])=>`<th class="${k==='belop'?'r':''}" data-k="${k}">${t}${sortKey===k?(sortDir>0?' ▲':' ▼'):''}</th>`).join('');
+  const f=filtered();
+  $('tb').innerHTML=f.length?f.map(r=>`<tr>${COLS.map(([k])=>k==='belop'?`<td class="r mono">${kr(r.belop)}</td>`:`<td class="${['til','fra','kid','arkivref'].includes(k)?'mono':''}">${esc(r[k])}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${COLS.length}" class="empty">Ingen treff.</td></tr>`;
+}
+
+async function load(list){
+  for(const file of list){
+    try{
+      const text=await file.text();
+      const p=parse(text,file.name);
+      files=files.filter(f=>f.name!==file.name);
+      files.push({name:file.name,...p,err:p.rows.length||p.checks.length?'':'Fant ingen OCR-records i filen'});
+    }catch(e){files.push({name:file.name,rows:[],checks:[],err:'Kunne ikke lese filen'})}
+  }
+  $('msg').textContent='';render();
+}
+
+$('inp').addEventListener('change',e=>{load([...e.target.files]);e.target.value=''});
+const dz=$('drop');
+['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();dz.classList.add('on')}));
+['dragleave','drop'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();if(ev==='drop'||e.target===document.documentElement)dz.classList.remove('on')}));
+document.addEventListener('drop',e=>{dz.classList.remove('on');if(e.dataTransfer?.files?.length)load([...e.dataTransfer.files])});
+$('clr').addEventListener('click',()=>{files=[];$('q').value='';render()});
+$('q').addEventListener('input',render);
+$('hd').addEventListener('click',e=>{const k=e.target.closest('th')?.dataset.k;if(!k)return;sortDir=sortKey===k?-sortDir:1;sortKey=k;render()});
+
+function sheetRows(){
+  return filtered().map(r=>({'Fil':r.fil,'Oppgjørsdato':r.oppgjor?new Date(iso(r.oppgjor)+'T12:00:00'):'','Betalt til konto':r.til,'Betalt fra konto':r.fra,'KID':r.kid,'Beløp':r.belop,'Type':r.type,'Oppdragsdato':r.oppdragsdato?new Date(iso(r.oppdragsdato)+'T12:00:00'):'','Arkivreferanse':r.arkivref,'Avtale-ID':r.avtale}));
+}
+let dl=null;
+const inClaude=typeof window.claude?.use==='function';
+if(inClaude)(async()=>{try{dl=await window.claude.use('downloads')}catch(e){dl=null}if(!dl)$('xl').hidden=true})();
+else dl={save:async({filename,data})=>{const u=URL.createObjectURL(new Blob([data],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));const a=document.createElement('a');a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}};
+$('xl').addEventListener('click',async()=>{
+  if(!dl||!window.XLSX){$('msg').textContent='Nedlasting er ikke tilgjengelig her. Bruk «Kopier tabell» og lim inn i Excel.';return}
+  const data=sheetRows();
+  const ws=XLSX.utils.json_to_sheet(data,{cellDates:true,dateNF:'dd.mm.yyyy'});
+  const rng=XLSX.utils.decode_range(ws['!ref']);
+  for(let R=1;R<=rng.e.r;R++){
+    const c=ws[XLSX.utils.encode_cell({r:R,c:5})];if(c)c.z='#,##0.00';
+    for(const C of [1,7]){const d=ws[XLSX.utils.encode_cell({r:R,c:C})];if(d&&d.t==='d')d.z='dd.mm.yyyy'}
+  }
+  ws['!cols']=[{wch:34},{wch:12},{wch:15},{wch:15},{wch:27},{wch:14},{wch:22},{wch:12},{wch:14},{wch:11}];
+  ws['!autofilter']={ref:ws['!ref']};
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Betalinger');
+  const buf=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+  const dates=[...new Set(data.map(r=>r['Oppgjørsdato']).filter(Boolean).map(d=>d.toISOString().slice(0,10)))].sort();
+  const name='OCR-betalinger'+(dates.length?' '+dates[0]+(dates.length>1?' til '+dates[dates.length-1]:''):'')+'.xlsx';
+  try{await dl.save({filename:name,data:buf});$('msg').textContent='Excel-filen er lagret.'}
+  catch(e){$('msg').textContent=e?.code==='declined'?'Nedlastingen ble avbrutt.':'Kunne ikke lagre filen. Bruk «Kopier tabell» og lim inn i Excel.'}
+});
+$('cp').addEventListener('click',async()=>{
+  const f=filtered();
+  const tsv=[COLS.map(c=>c[1]).join('\t'),...f.map(r=>COLS.map(([k])=>k==='belop'?kr(r.belop).replace(/\s/g,''):r[k]).join('\t'))].join('\n');
+  try{await navigator.clipboard.writeText(tsv);$('msg').textContent=`Kopierte ${f.length} rader. Lim inn i Excel med Ctrl+V.`}
+  catch(e){$('msg').textContent='Kopiering ble blokkert av nettleseren.'}
+});
+render();
+}
+</script>
+</body>
+</html>
